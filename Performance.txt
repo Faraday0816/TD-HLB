@@ -1,0 +1,27 @@
+cd ~/HLB_TCP_PerfTest_v2
+
+# ---- C0 预检：单笔通路 ----
+export VIP=10.119.38.97
+export JM=~/jmeter/apache-jmeter-5.6.3/bin/jmeter
+bash bin/run_smoke.sh $VIP $JM                       # 每端口 1 笔，期望 Err:0
+
+# ---- 公共 env：SLA 3000ms；线程按 SLA 反推足量 ----
+export HLB_TIMEOUT=3000        # 客户 SLA，超过判 FAILED
+export RT_WORST=3.0            # 悲观 RT=SLA（信实测可降 1.0）
+export THREAD_MARGIN=1.20
+export MAX_THREADS=600
+export RAMP_SEC=30
+
+# ---- Cycle 1 Performance：120 TPS 平跑 300s，err 门限 0% ----
+bash bin/run_ramp.sh $VIP $JM 120 0 1 300 0.0        # 80% 负载，单点平跑
+
+# ---- Cycle 2 Load：150 TPS 平跑 300s，err 门限 0% ----
+bash bin/run_ramp.sh $VIP $JM 150 0 1 300 0.0        # 100% 负载，单点平跑
+
+# ---- Cycle 3 Stress：150 起每档 +10%，爬到 120%(≈180)，每档 60s ----
+bash bin/run_ramp.sh $VIP $JM 150 10 3 60 10.0       # 150->165->181，触顶 err>=10% 判拐点
+# 想继续爬到真实崩溃点就把 steps 调大，例如 150 10 8 60 10.0
+
+# ---- Cycle 4 Endurance：150 TPS 稳跑 4 小时 ----
+nohup bash bin/run_ramp.sh $VIP $JM 150 0 1 14400 0.0 > C4_$(date +%Y%m%d_%H%M%S).out 2>&1 &
+echo "C4 pid(bash)=$!"
